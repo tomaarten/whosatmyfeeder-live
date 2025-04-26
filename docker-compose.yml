@@ -1,0 +1,13 @@
+version: "3.6"
+services:
+  whosatmyfeeder:
+    container_name: whosatmyfeeder_live
+    restart: unless-stopped
+    image: whosatmyfeederlive:latest
+    volumes:
+      - ./config:/config
+      - ./data:/data
+    ports:
+      - 7767:7767 #port used by the webserver in the container is defined in config.
+    environment:
+      - TZ=America/New_York

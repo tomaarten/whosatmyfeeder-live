@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}
+    LIVE! - Recent Detections
+{% endblock %}
+
+{% block date_picker %}
+  <form class="d-flex">
+      <input type="date" id="date-picker" class="form-control" value="{{ date }}" min="{{ earliest_date }}" max="{{ date }}" onchange="navigateToDailySummary(this)" />
+  </form>
+{% endblock %}
+
+{% block content %}
+    <h2>Recent Detections LIVE!</h2>
+    <table class="table">
+        <thead>
+        <tr>
+            <th scope="col">Detection Time</th>
+            <th scope="col">Common Name</th>
+            <th scope="col">Confidence</th>
+	    <th scope="col">Selection</th>
+            <th scope="col">Thumbnail</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for detection in recent_detections %}
+            <tr>
+                <td>{{ detection.detection_time }}</td>
+                <td>{{ detection.common_name }}</td>
+                <td>{{ '%.2f'|format(detection.score) }}</td>
+		<td>
+                  <form action="{{ url_for('set_label') }}" method="post">
+        	    <input type="hidden" name="event_id" value="{{ detection.frigate_event }}">
+        	    <select name="selected_label">
+          	      {% for label, score in detection.top5 %}
+            	  	  <option
+                            value="{{ label }}"
+                            {% if label == detection.user_label
+                                    or (detection.user_label is none and label == detection.common_name) %}
+                              selected
+                            {% endif %}
+                          >
+			    {{ label}} ({{ '%1.f'|format(score*100) }}%)
+            		  </option>
+          	      {% endfor %}
+       		    </select>
+        	    <button type="submit">Save</button>
+     		  </form>
+
+		  <!-- Review toggle button -->
+  		  <button class="btn btn-outline-success btn-sm review-btn"
+          		data-event="{{ detection.frigate_event }}"
+          		aria-pressed="{{ 'true' if detection.reviewed else 'false' }}">
+    		    <i class="bi bi-check{% if not detection.reviewed %}-circle{% endif %}"></i>
+  		  </button>
+
+		</td>
+		<td>
+		  <img src="{{ url_for('frigate_thumbnail', camera=detection.camera_name, full_id=detection.frigate_event) }}" alt="Thumbnail {{frigate_event}}"
+     width="100" height="auto" class="thumbnail"
+     onload="checkTransparentImage(this)"
+     onclick="showSnapshot('{{ url_for('frigate_snapshot', camera=detection.camera_name, full_id=detection.frigate_event) }}', '{{ url_for('frigate_clip', camera=detection.camera_name, full_id=detection.frigate_event) }}')"/>
+ 		</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <h2>Detection Summary</h2>
+    <table class="table">
+        <thead>
+        <tr>
+            <th scope="col">Common Name</th>
+            <th scope="col">Total</th>
+            {% for hour in range(current_hour + 1) %}
+                <th scope="col">
+                    <a href="{{ url_for('show_detections_by_hour', date=date, hour=hour) }}" class="text-decoration-none text-reset">
+			{{ hour }}
+                    </a>
+                </th>
+            {% endfor %}
+        </tr>
+        </thead>
+        <tbody>
+        {% for species in daily_summary.values() %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('show_detections_by_scientific_name', scientific_name=species.scientific_name, date=date, end_date=None) }}"
+                       class="text-decoration-none text-reset">
+                        {{ species.common_name }}
+                    </a>
+                </td>
+                <td>{{ species.total_detections }}</td>
+                {% for detections in species.hourly_detections[:current_hour + 1] %}
+                    <td>
+                        {% if detections > 0 %}
+                            {{ detections }}
+                        {% endif %}
+                    </td>
+                {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    {% include 'modals_and_scripts.html' %}
+{% endblock %}
+
+{% block scripts %}
+    <script>
+        function navigateToDailySummary(input) {
+            const selectedDate = input.value;
+            window.location.href = `/daily_summary/${selectedDate}`;
+        }
+    </script>
+    
+    <!-- jQuery from Google CDN -->
+    <script
+      src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"
+      integrity="sha384-…"
+      crossorigin="anonymous">
+    </script>
+
+    <!-- Your custom script that uses $() -->
+    <script src="/static/js/review-toggle.js"></script>
+
+
+    <script>
+    document.querySelectorAll('.review-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const eventId = btn.dataset.event;
+        const reviewed = btn.getAttribute('aria-pressed') === 'false';
+        const method = reviewed ? 'POST' : 'DELETE';
+        const res = await fetch(`/detections/${eventId}/review`, {
+          method,
+          headers: {'Content-Type':'application/json'},
+          body: reviewed ? JSON.stringify({reviewed}) : null
+        });
+        if (res.ok) {
+          btn.setAttribute('aria-pressed', reviewed);
+          const icon = btn.querySelector('i');
+          icon.className = reviewed ? 'bi bi-check' : 'bi bi-check-circle';
+        } else {
+          console.error('Failed to toggle review');
+        }
+      });
+    });
+    </script>
+
+{% endblock %}

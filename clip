@@ -1,0 +1,348 @@
+import sys
+import os
+import yaml
+import json
+import sqlite3
+import numpy as np
+from PIL import Image, ImageOps
+from io import BytesIO
+from datetime import datetime
+import requests
+#import paho.mqtt.client as mqtt
+from paho.mqtt import client as mqtt_client
+from paho.mqtt.client import CallbackAPIVersion
+from tflite_support.task import core, processor, vision
+from queries import get_common_name
+import multiprocessing
+import time
+#import cv2
+import hashlib
+from webui import app
+import logging
+
+
+# Globals
+session = requests.Session()
+DBPATH = './data/speciesid.db'
+
+# Load config + auth + TFLite model
+cfg_full = yaml.safe_load(open('config/config.yml'))
+frig_cfg = cfg_full['frigate']
+base_url = f"http://{frig_cfg['frigate_url']}"
+if frig_cfg.get('api_key'):
+    session.headers.update({'X-API-Key': frig_cfg['api_key']})
+elif frig_cfg.get('bearer_token'):
+    session.headers.update({'Authorization': f"Bearer {frig_cfg['bearer_token']}"})
+elif frig_cfg.get('username') and frig_cfg.get('password'):
+    r = session.post(f"{base_url}/api/login", json={
+        'user': frig_cfg['username'], 'password': frig_cfg['password']
+    })
+    if r.ok and 'access_token' in r.json():
+        session.headers.update({'Authorization': f"Bearer {r.json()['access_token']}"})
+    else:
+        session.auth = (frig_cfg['username'], frig_cfg['password'])
+
+# Load TFLite model & labels
+model_path = cfg_full['classification']['model']
+label_path = cfg_full['classification']['labels']
+base_opts = core.BaseOptions(file_name=model_path, num_threads=4)
+cls_opts = processor.ClassificationOptions(
+    max_results=3,
+    score_threshold=cfg_full['classification']['threshold']
+)
+vision_opts = vision.ImageClassifierOptions(
+    base_options=base_opts,
+    classification_options=cls_opts
+)
+classifier = vision.ImageClassifier.create_from_options(vision_opts)
+print(f"Loaded TFLite model: {model_path}, top‑k = {cls_opts.max_results}", flush=True)
+
+# Allowed species list
+#try:
+#    allowed = {l.strip() for l in open('config/northeast_birds.txt') if l.strip()}
+#except FileNotFoundError:
+#    print("no allowed species list")
+#    allowed = None
+
+# New filter import code
+BASE_DIR = os.path.dirname(__file__)                           # directory of speciesid.py :contentReference[oaicite:0]{index=0}
+whitelist_path = os.path.join(BASE_DIR, 'config', 'northeast_birds.txt')
+try:
+    with open(whitelist_path, 'r') as f:
+        allowed = {line.strip().lower() for line in f if line.strip() and not line.strip().startswith('#')}
+    print(f"Loaded {len(allowed)} allowed species: {sorted(allowed)}")
+except FileNotFoundError:
+    print(f"Whitelist file not found: {whitelist_path}")
+    allowed = set()
+
+logging.basicConfig(level=logging.DEBUG)
+
+
+# MQTT callbacks & DB setup
+def on_connect(client, userdata, flags, rc):
+    print("MQTT Connected", flush=True)
+
+    # we are going subscribe to frigate/events and look for bird detections there
+    client.subscribe(f"{cfg_full['frigate']['main_topic']}/events/#")
+
+
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        print("Unexpected disconnection, trying to reconnect", flush=True)
+        while True:
+            try:
+                client.reconnect()
+                break
+            except Exception as e:
+                print(f"Reconnection failed due to {e}, retrying in 60 seconds", flush=True)
+                time.sleep(60)
+    else:
+        print("Expected disconnection", flush=True)
+
+def setupdb():
+    conn = sqlite3.connect(DBPATH)
+    cursor = conn.cursor()
+    cursor.execute("""    
+        CREATE TABLE IF NOT EXISTS detections (    
+            id INTEGER PRIMARY KEY AUTOINCREMENT,  
+            detection_time TIMESTAMP NOT NULL,  
+            detection_index INTEGER NOT NULL,  
+            score REAL NOT NULL,  
+            display_name TEXT NOT NULL,  
+            category_name TEXT NOT NULL,  
+            frigate_event TEXT NOT NULL UNIQUE,
+            camera_name TEXT NOT NULL,
+            reviewed INTEGER NOT NULL DEFAULT 0
+        )    
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS detection_choices (
+            event_id TEXT,
+            rank INTEGER,
+            display_name TEXT,
+            score REAL,
+            PRIMARY KEY(event_id, rank)
+        )
+    """)
+
+    conn.commit()
+
+    conn.close()
+
+def on_message(client, userdata, message):
+    print("on message triggered")
+    payload = json.loads(message.payload)
+    if payload.get("type") != "update":
+        return # ignore 'new' and 'end' because they don't actually have snapshots
+
+    after = payload.get('after', {})
+    if after.get('label') != 'bird':
+        print("not bird")
+        return
+    full_id = after['id']
+    event_id = full_id.split('-')[0]
+    camera = after.get('camera')
+
+    # Build snapshot URL per camera
+    
+    snapshot_path = f"/api/{camera}/recordings/{event_id}/snapshot.jpg"
+    r = session.get(f"{base_url}{snapshot_path}", stream=True)
+    if not r.ok:
+        #print(f"Snapshot error {r.status_code}", flush=True)
+        return
+
+    img = Image.open(BytesIO(r.content))
+    img.thumbnail((224,224))
+    pad = ImageOps.expand(
+        img,
+        border=((224-img.width)//2, (224-img.height)//2),
+        fill='black'
+    )
+    arr = np.array(pad)
+    tensor_img = vision.TensorImage.create_from_array(arr)
+
+    start = datetime.fromtimestamp(after['start_time'])
+    ts = start.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Classification & DB logic as before...
+    result = classifier.classify(tensor_img)
+    categories = result.classifications[0].categories
+    if not categories:
+        print("no categories")
+        return
+
+    print("Model candidates before filtering:")
+    for cat in result.classifications[0].categories:
+        name = cat.category_name or "<None>"
+        low = name.lower()
+        is_allowed = (low in allowed)
+        print(f"  » '{name}' → lowercase '{low}' → in allowed? {is_allowed}")
+
+
+    filtered = [
+            cat for cat in result.classifications[0].categories
+            if cat.display_name not in (None, "__background__") and cat.display_name.lower() in allowed
+    ]
+
+    if not filtered:
+        print("stopped at filter... but not really")
+        return
+
+    best_cat = filtered[0]
+    display_name = best_cat.display_name
+    score = best_cat.score
+    index = best_cat.index
+    display_name = best_cat.display_name
+    category_name = best_cat.category_name
+
+    top5 = sorted(filtered, key=lambda c: c.score, reverse=True)[:5]
+
+    if score < cfg_full['classification']['threshold']:
+        print("Insufficient score")
+        return
+
+    if display_name != "__background__":
+        conn = sqlite3.connect(DBPATH, timeout=30)
+        cursor = conn.cursor()
+
+        #Check if a record with the given event exists
+        cursor.execute("SELECT * FROM detections WHERE frigate_event = ?", (full_id,))
+        result = cursor.fetchone()
+
+        if result is None:
+	     # Insert a new record if it doesn't exist
+             print("No record yet for this event. Storing.", flush=True)
+             cursor.execute("""  
+             INSERT OR REPLACE INTO detections (detection_time, detection_index, score,  
+             display_name, category_name, frigate_event, camera_name) VALUES (?, ?, ?, ?, ?, ?, ?)  
+             """, (ts, index, score, display_name, category_name, full_id, camera))
+            
+             for rank, cat in enumerate(top5, start=1):
+                 cursor.execute("""
+                 INSERT INTO detection_choices(event_id, rank, display_name, score)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT(event_id, rank) DO UPDATE
+                     SET display_name=excluded.display_name,
+                         score=excluded.score
+                 """, (full_id, rank, cat.category_name, cat.score))
+            
+        else:
+            print("There is already a record for this event. Checking score", flush=True)
+            # Update the existing record if the new score is higher
+            existing_score = result[3]
+            if score > existing_score:
+                print("New score is higher. Updating record with higher score.", flush=True)
+                cursor.execute("""  
+                  UPDATE detections  
+                  SET detection_time = ?, detection_index = ?, score = ?, display_name = ?, category_name = ?  
+                  WHERE frigate_event = ?  
+                  """, (ts, index, score, display_name, category_name, full_id))
+            else:
+                print("New score is lower.", flush=True)
+
+        # Commit the changes
+        conn.commit()
+
+
+    # Example sub_label push using recordings endpoint
+    sub_json = {"subLabel": display_name[:20]}
+    session.post(
+        f"{base_url}/api/{camera}/recordings/{event_id}/sub_label",
+        json=sub_json
+    )
+
+    conn.close()
+
+
+def run_mqtt_client():
+    load_config()
+    print("Starting MQTT client. Connecting to: " + config['frigate']['mqtt_server'], flush=True)
+    now = datetime.now()
+    current_time = now.strftime("%Y%m%d%H%M%S")
+    #client = mqtt.Client("birdspeciesid" + current_time)
+    client = mqtt_client.Client(
+      CallbackAPIVersion.VERSION1,          # use the legacy callback API
+      client_id="birdspeciesid" + current_time)
+    client.reconnect_delay_set(min_delay=1,max_delay=60)
+    
+    print("client created")
+
+    client.subscribe("frigate/events/#")
+    print("explicit subscription")
+    
+    client.on_message = on_message
+    client.on_disconnect = on_disconnect
+    client.on_connect = on_connect
+    # check if we are using authentication and set username/password if so
+    if config['frigate']['mqtt_auth']:
+        username = config['frigate']['mqtt_username']
+        password = config['frigate']['mqtt_password']
+        #print(username + "   " + password)
+        client.username_pw_set(username, password)
+
+    #client.enable_logger()
+
+    client.connect(config['frigate']['mqtt_server'])
+    client.loop_forever()
+
+def load_config():
+    global config
+    file_path = './config/config.yml'
+    with open(file_path, 'r') as config_file:
+        config = yaml.safe_load(config_file)
+
+def run_webui():
+    print("Starting flask app", flush=True)
+    app.run(debug=False, host=config['webui']['host'], port=config['webui']['port'])
+
+def main():
+
+    now = datetime.now()
+    current_time = now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+
+    print("Time: " + current_time, flush=True)
+    print("Python version", flush=True)
+    print(sys.version, flush=True)
+    print("Version info.", flush=True)
+    print(sys.version_info, flush=True)
+
+    load_config()
+
+    # Initialize the image classification model
+    base_options = core.BaseOptions(
+        file_name=config['classification']['model'], use_coral=False, num_threads=4)
+
+    # Enable Coral by this setting
+    classification_options = processor.ClassificationOptions(
+        max_results=1, score_threshold=0)
+    options = vision.ImageClassifierOptions(
+        base_options=base_options, classification_options=classification_options)
+
+    # create classifier
+    #global classifier
+    #classifier = vision.ImageClassifier.create_from_options(options)
+
+    # setup database
+    setupdb()
+
+    print("Starting threads for Flask and MQTT", flush=True)
+    flask_process = multiprocessing.Process(target=run_webui)
+    mqtt_process = multiprocessing.Process(target=run_mqtt_client)
+
+    flask_process.start()
+    mqtt_process.start()
+
+    flask_process.join()
+    mqtt_process.join()
+
+    print("main completed")
+
+if __name__ == '__main__':
+    print("Calling Main", flush=True)
+    main()
+
+
+
+
+

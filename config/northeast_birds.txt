@@ -1,0 +1,95 @@
+# Common names of birds in the Northeastern US, one per line
+American Robin
+Blue Jay
+Carolina Chickadee
+Northern Cardinal
+Mourning Dove
+Downy Woodpecker
+Red-tailed Hawk
+American Goldfinch
+Eastern Bluebird
+Dark-eyed Junco
+House Sparrow
+Field Sparrow
+Song Sparrow
+European Starling
+Eastern Kingbird
+Eastern Phoebe
+Lincoln's Sparrow
+Fox Sparrow
+Philadelphia Vireo
+White-throated Sparrow
+Hooded Oriole
+Eastern Towhee
+Downy Woodpecker
+Hairy Woodpecker
+Eastern Meadowlark
+Common Grackle
+Pileated Woodpecker
+Summer Tanager
+Scarlet Tanager
+Red-bellied Woodpecker
+Northern Flicker
+Painted Bunting
+Rose-breasted Grosbeak
+Red-breasted Grosbeak
+Black-and-white Warbler
+Brown-headed Cowbird
+Osprey
+Northern Harrier (American)
+Ruby-crowned Kinglet
+Golden-crowned Kinglet
+Dickcissel
+Prothonotary Warbler
+Belted Kingfisher
+Rock Pigeon
+House Finch
+Brown Thrasher
+Purple Martin
+Barn Swallow
+Tree Swallow
+American Woodcock
+Indigo Bunting
+Blue-gray Gnatcatcher
+Chipping Sparrow
+Peregrine Falcon
+American Kestrel
+Merlin
+Hermit Thrush
+Veery
+Common Redstart
+Wood Thrush
+Sharp-shinned Hawk
+Red-shouldered Hawk
+Red-tailed Hawk
+Bald Eagle
+Tufted Titmouse
+Ruby-throated Hummingbird
+American Redstart
+Red-winged Blackbird
+Cape May Warbler
+Northern Parula
+Blackburnian Warbler
+Yellow Warbler
+Blackpoll Warbler
+Palm Warbler
+Pine Warbler
+Yellow-rumped Warbler
+American Goldfinch
+Cooper's Hawk
+American Barn Swallow
+White-breasted Nuthatch
+Ovenbird
+White-eyed Vireo
+Gray Catbird
+Baltimore Oriole
+American Crow
+Northern Mockingbird
+Cedar Waxwing
+Carolina Wren
+House Wren
+Barn Owl
+
+
+
+# ... add more as desired

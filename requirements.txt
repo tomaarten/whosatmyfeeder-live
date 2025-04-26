@@ -1,0 +1,7 @@
+flask
+pyyaml
+requests
+paho-mqtt
+Pillow
+numpy
+tflite-support

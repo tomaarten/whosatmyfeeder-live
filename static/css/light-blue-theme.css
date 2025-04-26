@@ -1,0 +1,57 @@
+/* Base background and text */
+body {
+  background-color: #f0f8ff;  /* AliceBlue */
+  color: #003f5c;             /* Darker navy */
+}
+
+/* Tables */
+.table {
+  background-color: #e6f2fa;  /* Very light blue */
+}
+.table thead th {
+  background-color: #cce4f7;  /* Light sky blue */
+  color: #003f5c;
+}
+.table tbody tr:nth-child(odd) {
+  background-color: #f2f9fe;  /* Alternating row */
+}
+
+/* Buttons */
+.btn-primary {
+  background-color: #6cb4ee;  /* Light cornflower blue */
+  border-color: #5ea3d6;
+}
+.btn-primary:hover {
+  background-color: #5ea3d6;
+  border-color: #5696c0;
+}
+.btn-outline-success {
+  color: #003f5c;
+  border-color: #6cb4ee;
+}
+.btn-outline-success:hover {
+  background-color: #6cb4ee;
+  color: #fff;
+}
+
+/* Form controls */
+.form-control, .form-select {
+  border: 1px solid #6cb4ee;
+}
+.form-control:focus, .form-select:focus {
+  border-color: #5ea3d6;
+  box-shadow: 0 0 0 0.2rem rgba(92, 163, 214, 0.25);
+}
+
+/* Navbar (if used) */
+.navbar, .navbar-light {
+  background-color: #cce4f7;
+}
+.navbar-brand, .nav-link {
+  color: #003f5c !important;
+}
+.nav-link.active {
+  font-weight: bold;
+  color: #5ea3d6 !important;
+}
+

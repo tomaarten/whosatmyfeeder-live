@@ -19,7 +19,7 @@ import time
 import hashlib
 from webui import app
 import logging
-
+import tflite_runtime.interpreter as tflite
 
 # Globals
 session = requests.Session()
@@ -41,6 +41,9 @@ elif frig_cfg.get('username') and frig_cfg.get('password'):
         session.headers.update({'Authorization': f"Bearer {r.json()['access_token']}"})
     else:
         session.auth = (frig_cfg['username'], frig_cfg['password'])
+MODEL_PATH = cfg_full['classification']['model']
+LABEL_PATH = cfg_full['classification']['labels']
+
 
 # Load TFLite model & labels
 model_path = cfg_full['classification']['model']
@@ -107,6 +110,40 @@ def get_common_name(scientific_name: str) -> str:
         print(f"Warning: failed to lookup common name for {scientific_name}: {e}")
     return scientific_name
 
+def classify_top5_via_interpreter(pil_img: Image.Image):
+    # 1. Crop / resize / pad exactly as in speciesid.py
+    #img = pil_img.copy()
+    #img.thumbnail((224, 224))
+    #pad = ImageOps.expand(
+    #    img,
+    #    border=((224 - img.width)  // 2, (224 - img.height) // 2),
+    #    fill='black'
+    #)
+    #arr = np.array(pad)
+    
+    arr = np.array(pil_img)
+
+    # 2. Prepare input tensor
+    tensor = np.expand_dims(arr, axis=0).astype(input_details[0]['dtype'])
+    interpreter.set_tensor(input_details[0]['index'], tensor)
+
+    # 3. Run inference
+    interpreter.invoke()
+
+    # 4. Retrieve and dequantize output
+    raw_output = interpreter.get_tensor(output_details[0]['index'])  # shape: [1, 965]
+    scale, zero_point = output_details[0]['quantization']
+    probs = scale * (raw_output.astype(np.float32) - zero_point)    # dequantize :contentReference[oaicite:6]{index=6}
+    probs = np.squeeze(probs)  # shape: (965,)
+
+    # 5. Get top-5 indices
+    #    Argsort returns indices that would sort the array ascending.
+    idx_sorted = np.argsort(probs)                              # :contentReference[oaicite:7]{index=7}
+    top5_idx   = idx_sorted[-5:][::-1]                          # last 5 reversed for descending :contentReference[oaicite:8]{index=8}
+
+    # 6. Map to (label, score)
+    top5 = [(labels[i], float(probs[i])) for i in top5_idx]     # label file from step 2 :contentReference[oaicite:9]{index=9}
+    return top5
 
 # MQTT callbacks & DB setup
 def on_connect(client, userdata, flags, rc):
@@ -255,7 +292,8 @@ def on_message(client, userdata, message):
     common_name = get_common_name(best_cat.display_name)
     logger.debug("Best candidate: %s", best_cat.display_name)
 
-    top5 = sorted(filtered, key=lambda c: c.score, reverse=True)[:5]
+    #top5 = sorted(filtered, key=lambda c: c.score, reverse=True)[:5]
+    top5 = classify_top5_via_interpreter(pad)
 
     if score < cfg_full['classification']['threshold']:
         #print("Insufficient score")
@@ -383,6 +421,13 @@ def main():
     # create classifier
     global classifier
     classifier = vision.ImageClassifier.create_from_options(options)
+
+    # Instantiate and allocate
+    global interpreter
+    interpreter = tflite.Interpreter(model_path=MODEL_PATH)  
+    interpreter.allocate_tensors()  
+    input_details  = interpreter.get_input_details()  
+    output_details = interpreter.get_output_details()  
 
     # setup database
     setupdb()

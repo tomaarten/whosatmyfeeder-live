@@ -5,3 +5,4 @@ paho-mqtt
 Pillow
 numpy
 tflite-support
+tflite-runtime

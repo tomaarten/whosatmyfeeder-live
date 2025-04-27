@@ -123,6 +123,16 @@ def classify_top5_via_interpreter(pil_img: Image.Image):
     
     arr = np.array(pil_img)
 
+    with open(LABEL_PATH) as f:
+        labels = [line.strip() for line in f]
+
+    # Ensure interpreter is ready
+    interpreter.allocate_tensors()
+
+    # Fetch details here, in the function’s scope
+    input_details  = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
     # 2. Prepare input tensor
     tensor = np.expand_dims(arr, axis=0).astype(input_details[0]['dtype'])
     interpreter.set_tensor(input_details[0]['index'], tensor)
@@ -235,11 +245,24 @@ def on_message(client, userdata, message):
     x1, y1, x2, y2 = after['snapshot']['box']
     ROI = img.crop((x1,y1,x2,y2))
     ROI.thumbnail((224,224))
+#    pad = ImageOps.expand(
+#        ROI,
+#        border=((224-ROI.width)//2, (224-ROI.height)//2),
+#        fill='black'
+#    )
+    
+    w, h = ROI.size
+    pad_left   = (224 - w) // 2
+    pad_right  = 224 - w - pad_left
+    pad_top    = (224 - h) // 2
+    pad_bottom = 224 - h - pad_top
+
     pad = ImageOps.expand(
         ROI,
-        border=((224-ROI.width)//2, (224-ROI.height)//2),
+        border=(pad_left, pad_top, pad_right, pad_bottom),
         fill='black'
     )
+
     arr = np.array(pad)
     tensor_img = vision.TensorImage.create_from_array(arr)
 
@@ -316,14 +339,15 @@ def on_message(client, userdata, message):
              display_name, category_name, frigate_event, camera_name) VALUES (?, ?, ?, ?, ?, ?, ?)  
              """, (ts, index, score, common_name, category_name, full_id, camera))
             
-             for rank, cat in enumerate(top5, start=1):
+             for rank, (display_name, score) in enumerate(top5, start=1):
+                 common = get_common_name(display_name)
                  cursor.execute("""
                  INSERT INTO detection_choices(event_id, rank, display_name, score)
                  VALUES (?, ?, ?, ?)
                  ON CONFLICT(event_id, rank) DO UPDATE
                      SET display_name=excluded.display_name,
                          score=excluded.score
-                 """, (full_id, rank, get_common_name(cat.display_name), cat.score))
+                 """, (full_id, rank, common, score))
             
         else:
             print("There is already a record for this event. Checking score", flush=True)

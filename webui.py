@@ -180,9 +180,17 @@ def show_detections_by_hour(date, hour):
 @app.route('/detections/by_scientific_name/<scientific_name>/<date>', defaults={'end_date': None})
 @app.route('/detections/by_scientific_name/<scientific_name>/<date>/<end_date>')
 def show_detections_by_scientific_name(scientific_name, date, end_date):
+    day_obj = datetime.strptime(date, "%Y-%m-%d").date()
+
     if end_date is None:
-        records = get_records_for_scientific_name_and_date(scientific_name, date)
-        return render_template('detections_by_scientific_name.html', scientific_name=scientific_name, date=date,
+        records = get_records_for_scientific_name_and_date(scientific_name, day_obj)
+    if end_date:
+        end_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+        records = get_records_for_scientific_name_and_date(scientific_name, day_obj, end_obj)
+    else:
+        records = get_records_for_scientific_name_and_date(scientific_name, day_obj)
+
+    return render_template('detections_by_scientific_name.html', scientific_name=scientific_name, date=date,
                                end_date=end_date, common_name=get_common_name(scientific_name), records=records)
 
 
@@ -215,13 +223,15 @@ def set_label():
     db.execute("UPDATE detections SET user_label = ? WHERE frigate_event = ?",
                (sub_label, event_id))
     db.commit()
+    
     # 2) Optionally, push sub_label back to Frigate
-    r = requests.post(
-      f"{FRIGATE_API}/api/events/{event_id}/sub_label",
-      json={"subLabel": sub_label}
-    )
-    if not r.ok:
-        app.logger.error("Failed to set sub_label on Frigate API")
+    #r = requests.post(
+    #  f"{FRIGATE_API}/api/events/{event_id}/sub_label",
+    #  json={"subLabel": sub_label}
+    #)
+    #if not r.ok:
+    #    app.logger.error("Failed to set sub_label on Frigate API")
+    
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/detections/<event_id>/review', methods=['POST'])

@@ -26,7 +26,7 @@
         {% for detection in recent_detections %}
             <tr>
                 <td>{{ detection.detection_time }}</td>
-                <td>{{ detection.common_name }}</td>
+                <td>{{ detection.display_name }}</td>
                 <td>{{ '%.2f'|format(detection.score) }}</td>
 		<td>
                   <form action="{{ url_for('set_label') }}" method="post">

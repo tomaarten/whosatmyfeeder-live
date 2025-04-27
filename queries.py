@@ -5,6 +5,7 @@ from typing import List, Dict, Tuple, Optional
 
 # Path to your SQLite database file
 DBPATH = './data/speciesid.db'
+NAMEDBPATH = './birdnames.db'
 
 def _connect():
     """Open a new database connection and set row factory."""
@@ -18,9 +19,9 @@ def get_common_name(scientific_name: str) -> str:
     Look up the human‐friendly common name for a given scientific name.
     Returns the scientific name itself if no mapping is found.
     """
-    conn = _connect()
+    conn = sqlite3.connect(NAMEDBPATH)
     cur = conn.execute(
-        "SELECT common_name FROM species_lookup WHERE scientific_name = ?",
+        "SELECT common_name FROM birdnames WHERE scientific_name = ?",
         (scientific_name,)
     )
     row = cur.fetchone()
@@ -84,15 +85,14 @@ def get_daily_summary(day: date) -> Dict[str, object]:
                                    'hourly_detections': [0]*24})
     cur = conn.execute(
         """
-        SELECT category_name AS scientific_name,
+        SELECT display_name AS scientific_name,
                COUNT(*) AS cnt,
                STRFTIME('%H', detection_time) AS hr
           FROM detections
          WHERE DATE(detection_time) = ?
-           AND reviewed = 1           -- only include reviewed for the official summary
          GROUP BY scientific_name, hr
         """,
-        (day.isoformat(),)
+        (day.strftime('%Y-%m-%d'),)
     )
     for row in cur:
         sci = row['scientific_name']

@@ -141,22 +141,22 @@ def get_records_for_scientific_name_and_date(scientific_name: str,
             """
             SELECT *
               FROM detections
-             WHERE category_name = ?
+             WHERE display_name = ?
                AND DATE(detection_time) BETWEEN ? AND ?
             ORDER BY detection_time ASC
             """,
-            (scientific_name, day.isoformat(), end_date.isoformat())
+            (get_common_name(scientific_name), day.isoformat(), end_date.isoformat())
         )
     else:
         cur = conn.execute(
             """
             SELECT *
               FROM detections
-             WHERE category_name = ?
+             WHERE display_name = ?
                AND DATE(detection_time) = ?
             ORDER BY detection_time ASC
             """,
-            (scientific_name, day.isoformat())
+            (get_common_name(scientific_name), day.isoformat())
         )
     recs = [dict(r) for r in cur.fetchall()]
     conn.close()

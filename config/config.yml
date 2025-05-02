@@ -1,16 +1,16 @@
 frigate:
   # Host (without http://), e.g. 192.168.1.100:5000
-  frigate_url: "192.168.50.96:5000"
+  frigate_url: "localhost:5000"
   api_key: ""          # or PLUS_API_KEY for Frigate+
   bearer_token: ""     # if using JWT
   username: ""         # optional: basic auth or to get JWT via /api/login
   password: ""
   # MQTT settings
-  mqtt_server: "192.168.50.153"
+  mqtt_server: "ip of MQTT host"
   main_topic: "frigate"
   mqtt_auth: true
-  mqtt_username: "jkclou"
-  mqtt_password: "Tu7^G^zWLT9gf9wX"
+  mqtt_username: ""
+  mqtt_password: ""
 
 webui:
   host: "0.0.0.0"

@@ -18,7 +18,7 @@ The application consists of two main components:
 - A Flask web UI for viewing and managing detections
 
 ## Prerequisites
-- [Frigate NVR](https://frigate.video/) (properly configured with bird detection)
+- [Frigate NVR](https://frigate.video/) (properly configured with bird detection, refer to the setup guide from [the original project](https://github.com/mmcc-xx/WhosAtMyFeeder))
 - Frigate-compatible camera [(official recomendations)](https://docs.frigate.video/frigate/hardware) positioned such that birds will appear large in its frame (mine is ~8" from a feeder)
 - MQTT broker (mine is running through Home Assistant)
 - Docker
